@@ -450,7 +450,7 @@ new p5(function(p) {
 
         ui.needBar.style.width = c.need + '%';
         ui.needBar.style.backgroundColor =
-            c.need < 30 ? '#788c5d' :
+            c.need < 30 ? '#283713' :
             c.need < 70 ? '#c9973a' : '#c0522a';
     }
 
