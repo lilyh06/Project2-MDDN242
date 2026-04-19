@@ -345,7 +345,7 @@ body {
     color: white;
 }
 
-.button.danger:hover { background: #a8421c; }
+.button.danger:hover { background: #345438; }
 
 /* ── Drawer handle — hidden on desktop ── */
 
@@ -461,4 +461,99 @@ body {
     .divider           { margin: 14px 0; }
     .control-section   { margin-bottom: 16px; }
     .stats-row         { gap: 6px; }
+}
+
+/* ============================================================
+   DARK MODE
+   ============================================================ */
+
+body.dark-mode {
+    background: #0f0f0f;
+    color: #f0f0f0;
+}
+
+/* Sidebar */
+body.dark-mode .sidebar {
+    background: rgba(20,20,20,0.92);
+    color: #f0f0f0;
+    border-color: #333;
+}
+
+/* State card */
+body.dark-mode .state-card {
+    background: #1a1a1a;
+    border-color: #333;
+}
+
+/* Pills */
+body.dark-mode .stat-pill {
+    background: #1a1a1a;
+    border-color: #333;
+}
+
+/* Need bar track */
+body.dark-mode .need-track {
+    background: #333;
+}
+
+/* Buttons */
+body.dark-mode .button {
+    background: #333;
+    color: #f0f0f0;
+}
+
+body.dark-mode .button.secondary {
+    background: #1a1a1a;
+    border-color: #444;
+}
+
+body.dark-mode .button.danger {
+    background: #345438;
+}
+
+/* Toggle button */
+.mode-toggle {
+    margin-top: 10px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    background: white;
+    cursor: pointer;
+    font-size: 12px;
+    transition: 0.2s;
+}
+
+body.dark-mode .mode-toggle {
+    background: #222;
+    color: #eee;
+    border-color: #555;
+}
+
+/* Make ALL text inside dark mode white */
+body.dark-mode,
+body.dark-mode * {
+    color: #f0f0f0 !important;
+}
+
+/* But keep buttons readable */
+body.dark-mode .button.secondary {
+    color: #f0f0f0 !important;
+}
+
+body.dark-mode .state-card-value,
+body.dark-mode .s-val,
+body.dark-mode .hour-num {
+    color: #ffffff !important;
+}
+
+.hour-day {
+    font-family: 'Poppins', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--dark);
+    opacity: 0.6;
+    padding-bottom: 6px;
+    margin-left: 6px;
 }

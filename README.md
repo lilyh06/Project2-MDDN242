@@ -47,3 +47,18 @@ When the user clicks away / tab is not focus
 When the user returns + stays quiet
 → trust slowly rebuilds
 → transitions: worried → untrusted → calm
+
+______________________
+17th april:
+DO THIS::::
+--Time since last visit
+--Number of visits
+--day of week
+
+make web shape different if havent visited in spaccific number of hours or spasicic weather
+maybe make education to a real spiders haits, eg makes stronger web when windy
+do whats already been sent, hasnt been added at all, then add afk counter to sidebar that says how many hours uve been away for. plus fix the clouds somehow
+__________________
+
+
+do whats already been sent, hasnt been added at all, then add afk counter to sidebar that says how many hours uve been away for. plus fix the clouds somehow

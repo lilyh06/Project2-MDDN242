@@ -34,9 +34,19 @@ new p5(function(p) {
     let EXCITED_FRAMES  = 40;
     let BOUNCE_SCALE    = 1.0;
     let bgImg;
+    let bgBehind;
+    let focusLostAt = null;
+    let focusAwayMinutes = 0;
+    let raindrops = [];
+    let rainActive = false;
+let debris = [];
+let debrisSpawnTimer = 0;
+
+
+
    let cloudImg;
    let cloudX = 0;
-let cloudY = 0;
+ let cloudY = 0;
     let cloudSpeed = 0.3;
     let cloudAlpha = 0;
     let cloudsActive = false;
@@ -298,8 +308,9 @@ if (c.micLevel > MIC_THRESHOLD) return 'frustrated';
     // ============================================================
 
 p.preload = function () {
+    bgBehind = p.loadImage("bgbehind.png");
     bgImg = p.loadImage("background.png");
-};
+    };
 
 
 
@@ -349,10 +360,20 @@ p.setup = function () {
         ui.watched = document.getElementById('ui-watched');
         ui.mic     = document.getElementById('ui-mic');
         ui.weather = document.getElementById('ui-weather');
+        ui.day = document.getElementById('ui-day');
+        ui.afk = document.getElementById('ui-afk');
+        ui.away = document.getElementById('ui-away');
 
 
-        window.addEventListener('focus', () => { creature.isWatched = true; });
-        window.addEventListener('blur',  () => { creature.isWatched = false; });
+        window.addEventListener('focus', () => {
+    creature.isWatched = true;
+    focusLostAt = null; // reset timer
+});
+
+window.addEventListener('blur', () => {
+    creature.isWatched = false;
+    focusLostAt = Date.now(); // start timer
+});
 
         setInterval(() => { saveState(creature); creature.hour = new Date().getHours(); }, 30000);
         window.addEventListener('beforeunload', () => saveState(creature));
@@ -380,54 +401,102 @@ p.setup = function () {
 }
 
 
+function spawnRain() {
+    // Create 6–10 new drops per frame
+    for (let i = 0; i < 8; i++) {
+        raindrops.push({
+            x: p.random(0, p.width),
+            y: p.random(-20, 0),
+            len: p.random(8, 14),
+            speed: p.random(4, 8)
+        });
+    }
+}
+function drawRain() {
+    p.stroke(255, 255, 255, 20); //change to make more or less transparent
+    p.strokeWeight(1.2);
+
+    for (let drop of raindrops) {
+        p.line(drop.x, drop.y, drop.x, drop.y + drop.len);
+        drop.y += drop.speed;
+    }
+
+    // Remove drops that fall off-screen
+    raindrops = raindrops.filter(d => d.y < p.height + 20);
+}
+
+
+
     // ============================================================
     //  DRAW LOOP
     // ============================================================
 
- p.draw = function() {
+p.draw = function() {
     fetchWeather();
 
     let col = getBackgroundColor();
-  let code = -1;
-let cloudy = false;
+    let code = -1;
+    let cloudy = false;
 
-if (weatherData && weatherData.current) {
-    code = weatherData.current.weather_code;
-    cloudy = (code === 2 || code === 3);
-}
-
-p.background(col[0], col[1], col[2]);   // 1. colour background
-
-p.tint(255, 200);
-p.image(bgImg, 0, 0, p.width, p.height); // 2. background image ONCE
-p.noTint();
-
-// 3. clouds ABOVE background image
-if (cloudy) {
-    cloudsActive = true;
-    cloudAlpha = p.lerp(cloudAlpha, 255, 0.02);
-} else {
-    cloudAlpha = p.lerp(cloudAlpha, 0, 0.02);
-    if (cloudAlpha < 1) cloudsActive = false;
-}
-
-if (cloudsActive && cloudImg) {
-    cloudX -= cloudSpeed;
-
-    if (cloudX < -p.width) {
-        cloudX = p.width + 50;
-        cloudY = p.random(20, p.height * 0.4);
+    if (weatherData && weatherData.current) {
+        code = weatherData.current.weather_code;
+        cloudy = (code !== 0 && code !== 1); 
+        
     }
 
-    p.tint(255, cloudAlpha);
-    p.image(cloudImg, cloudX, cloudY, cloudImg.width * 1.2, cloudImg.height * 1.2);
-    p.noTint();
+    let raining = [51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code);
+    rainActive = raining;
+
+
+    p.background(col[0], col[1], col[2]);
+
+    if (bgBehind) {
+        p.image(bgBehind, 0, 0, p.width, p.height);
+    }
+
+// --- Debris system ---
+// Spawn debris every ~15 seconds
+debrisSpawnTimer++;
+if (debrisSpawnTimer > 900) {
+    spawnDebris();
+    debrisSpawnTimer = 0;
 }
 
+// Update + draw debris (falling or stuck)
+updateDebris();
 
 
 
-    // Draw web
+    p.tint(255, 200);
+    p.image(bgImg, 0, 0, p.width, p.height);
+    p.noTint();
+
+    if (cloudy) {
+        cloudsActive = true;
+        cloudAlpha = p.lerp(cloudAlpha, 255, 0.02);
+    } else {
+        cloudAlpha = p.lerp(cloudAlpha, 0, 0.02);
+        if (cloudAlpha < 1) cloudsActive = false;
+    }
+
+    if (cloudsActive && cloudImg) {
+        cloudX -= cloudSpeed;
+        if (cloudX < -p.width) {
+            cloudX = p.width + 50;
+            cloudY = p.random(20, p.height * 0.4);
+        }
+        p.tint(255, cloudAlpha);
+        p.image(cloudImg, cloudX, cloudY, cloudImg.width * 1.2, cloudImg.height * 1.2);
+        p.noTint();
+    }
+
+    // Rain effect
+    if (rainActive) {
+        spawnRain();
+        drawRain();
+    }
+
+    // web + creature
     if (USE_WEB_IMAGE && webImg) {
         p.image(webImg, 0, 0, p.width, p.height);
     } else {
@@ -440,7 +509,6 @@ if (cloudsActive && cloudImg) {
 
     if (p.frameCount % 6 === 0) updateSidebar(creature);
 };
-
 
 
     // ============================================================
@@ -513,6 +581,15 @@ if (c.freezeTimer > 0) {
     return; // stop all movement
 }
 
+// If user was away for an hour, spider must curl up at hub
+if (c.awayTooLong) {
+    c.returningHome = true;
+}
+
+if (c.isWatched && c.curled) {
+    c.curled = false;
+    c.awayTooLong = false;
+}
 
 // ── 'Need behaviour' ──────────────────────────────────────────
 // ── Need behaviour with calm state ──────────────────────────
@@ -533,6 +610,11 @@ if (c.isWatched && c.micLevel < 0.05) {
     c.trustLevel = Math.max(0, c.trustLevel - loss);
 }
 
+// Debris frustration: if any debris is stuck, spider becomes frustrated
+let debrisStuck = debris.some(d => d.stuck);
+if (debrisStuck) {
+    c.state = 'frustrated';
+}
 
 
         // ── State & animation params ────────────────────────────
@@ -572,10 +654,15 @@ if (c.state === 'worried' || c.state === 'frustrated') {
         nodeDist(a, 0) - nodeDist(b, 0)
     )[0];
 
-    // If we reached the hub, stop returning
-    if (c.currentNode === 0) {
+ if (c.currentNode === 0) {
+    if (c.awayTooLong) {
+        c.curled = true;     // NEW: curled state
+        c.returningHome = false;
+    } else {
+        c.curled = false;
         c.returningHome = false;
     }
+}
 } else {
     c.targetNode = pickNextNode(c);
 }
@@ -601,7 +688,7 @@ if (c.state === 'worried' || c.state === 'frustrated') {
 
 function drawProceduralWeb() {
     p.push();
-    p.stroke(255, 255, 255, 90);
+    p.stroke(255, 255, 255, 20);
     p.noFill();
 
     // --- Draw radial spokes (hub → every node on outer ring) ---
@@ -649,42 +736,98 @@ function drawProceduralWeb() {
     p.pop();
 }
 
+function spawnDebris() {
+    debris.push({
+        x: p.random(0, p.width),
+        y: -20,
+        size: p.random(6, 12),
+        speed: p.random(1, 2),
+        stuck: false,
+        stuckNode: null
+    });
+}
+function updateDebris() {
+    for (let d of debris) {
+
+        // If already stuck, just draw it
+        if (d.stuck) {
+            p.fill(255, 200);
+            p.noStroke();
+            p.circle(d.x, d.y, d.size);
+            continue;
+        }
+
+        // Falling
+        d.y += d.speed;
+
+        // Check if it hits a web node
+        for (let n of WEB_NODES) {
+            let nx = n.x * p.width;
+            let ny = n.y * p.height;
+            if (p.dist(d.x, d.y, nx, ny) < 12) {
+                d.stuck = true;
+                d.stuckNode = n.id;
+                d.x = nx;
+                d.y = ny;
+                break;
+            }
+        }
+
+        // Draw falling debris
+        p.fill(255, 200);
+        p.noStroke();
+        p.circle(d.x, d.y, d.size);
+    }
+}
 
 
     // ============================================================
     //  DRAWING
     // ============================================================
 
-    function drawCreature(c) {
-        p.push();
-        p.translate(c.x, c.y);
-        p.translate(0, p.sin(c.bob) * 4);
+function drawCreature(c) {
+    p.push();
+    p.translate(c.x, c.y);
+    p.translate(0, p.sin(c.bob) * 4);
 
-        let s = STATES[c.state];
-        let bScale = 1 + p.sin(c.breathe) * c.bounceAmt;
+    // Curl up if away too long
+    if (c.curled) {
+        p.scale(0.6);  
+        c.bounceAmt = 0;
+        c.bodyAlpha = 255;
 
-        if (s.shakeAmt > 0) {
-            p.translate(
-                p.random(-s.shakeAmt, s.shakeAmt),
-                p.random(-s.shakeAmt * 0.4, s.shakeAmt * 0.4)
-            );
-        }
-
-        // Face direction of travel
-        let cur = WEB_NODES[c.currentNode];
-        let tgt = WEB_NODES[c.targetNode];
-        let angle = Math.atan2(
-            (tgt.y - cur.y) * p.height,
-            (tgt.x - cur.x) * p.width
+        p.translate(
+            p.random(-3, 3),
+            p.random(-1.5, 1.5)
         );
-        p.rotate(angle + p.HALF_PI); // spider faces forward along edge
-
-        let sc = CREATURE_SIZE / 55.0 * bScale;
-        p.scale(sc);
-
-        drawSpider(c);
-        p.pop();
     }
+
+    let s = STATES[c.state];
+    let bScale = 1 + p.sin(c.breathe) * c.bounceAmt;
+
+    if (s.shakeAmt > 0) {
+        p.translate(
+            p.random(-s.shakeAmt, s.shakeAmt),
+            p.random(-s.shakeAmt * 0.4, s.shakeAmt * 0.4)
+        );
+    }
+
+    // Face direction of travel
+    let cur = WEB_NODES[c.currentNode];
+    let tgt = WEB_NODES[c.targetNode];
+    let angle = Math.atan2(
+        (tgt.y - cur.y) * p.height,
+        (tgt.x - cur.x) * p.width
+    );
+    p.rotate(angle + p.HALF_PI);
+
+    let sc = CREATURE_SIZE / 55.0 * bScale;
+    p.scale(sc);
+
+    drawSpider(c);
+    p.pop();
+}
+
 
 
     // ============================================================
@@ -860,6 +1003,8 @@ function drawProceduralWeb() {
              let afkHours = Math.min((Date.now() - c.lastVisit) / 3600000, AFK_MAX_HOURS);
              c.trustBuildRate = 0.001 / (1 + afkHours * 0.15);
 
+             c.awayTooLong = afkHours >= 1;   // true if user was gone ≥ 1 hour
+
     }
 
 
@@ -877,24 +1022,42 @@ function drawProceduralWeb() {
         if (ui.excited) ui.excited.textContent = c.exciteTimer > 0 ? 'yes!' : 'no';
         if (ui.watched) ui.watched.textContent = c.isWatched ? 'on' : 'away';
         if (ui.mic)     ui.mic.textContent     = micActive ? c.micLevel.toFixed(2) : '—';
+        if (ui.day) {
+    const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    ui.day.textContent = days[new Date().getDay()];
+}
+
 
 if (ui.weather) {
     if (weatherData && weatherData.current) {
         ui.weather.textContent = describeWeather(weatherData.current.weather_code);
-    } else {
+    } 
+    else {
         ui.weather.textContent = "loading...";
     }
+
 }
 
-
-
-        if (ui.needBar) {
-            ui.needBar.style.width = c.need + '%';
-            ui.needBar.style.backgroundColor =
-                c.need < 30 ? '#283713' :
-                c.need < 70 ? '#c9973a' : '#c0522a';
-        }
+// Time away (minutes since focus lost)
+if (ui.away) {
+    if (focusLostAt) {
+        let ms = Date.now() - focusLostAt;
+        focusAwayMinutes = Math.floor(ms / 60000);
+    } else {
+        focusAwayMinutes = 0;
     }
+    ui.away.textContent = focusAwayMinutes + "m";
+}
+
+// AFK counter (minutes since last visit)
+if (ui.afk && c.lastVisit) {
+    let ms = Date.now() - c.lastVisit;
+    let mins = Math.floor(ms / 60000);
+    ui.afk.textContent = mins + "m";
+}
+
+} // end updateSidebar
+
 
 
     // ============================================================
@@ -918,3 +1081,27 @@ if (ui.weather) {
     window._setFeed   = v => { CLICK_FEED = v; };
 
 }, document.body);
+
+function drawImageNoStretch(img) {
+    let imgRatio = img.width / img.height;
+    let canvasRatio = p.width / p.height;
+
+    let drawW, drawH;
+
+    if (imgRatio > canvasRatio) {
+        // Image is wider → match height
+        drawH = p.height;
+        drawW = drawH * imgRatio;
+    } else {
+        // Image is taller → match width
+        drawW = p.width;
+        drawH = drawW / imgRatio;
+    }
+
+    // Center the image
+    let x = (p.width - drawW) / 2;
+    let y = (p.height - drawH) / 2;
+
+    p.image(img, x, y, drawW, drawH);
+}
+
