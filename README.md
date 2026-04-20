@@ -62,3 +62,12 @@ __________________
 
 
 do whats already been sent, hasnt been added at all, then add afk counter to sidebar that says how many hours uve been away for. plus fix the clouds somehow
+
+- they started stacking on the same nodes, so i had to give it a cap make the drop rates more interesting and connected to how the user is interacting with the spider
+_________
+TO DO:
+if you build a really close relationship with the spider it brinsg its family members 
+slightly less close or something else dependant it draws different pictures in the web
+
+-if you collect enough debris and put them in ur basket you can gift them ack at a bouquet and the spiderw ill draw u the flower picture the next time u retrun----!!
+_____

@@ -557,3 +557,29 @@ body.dark-mode .hour-num {
     padding-bottom: 6px;
     margin-left: 6px;
 }
+
+.trust-wrap { margin-top: 6px; }
+
+.trust-track {
+    height: 6px;
+    background: var(--powder-blue);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.trust-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.4s ease, background-color 0.6s ease;
+    background: var(--blue);
+}
+
+.trust-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: var(--dark);
+    font-family: 'Courier New', monospace;
+}
+

@@ -39,14 +39,33 @@ new p5(function(p) {
     let focusAwayMinutes = 0;
     let raindrops = [];
     let rainActive = false;
-let debris = [];
-let debrisSpawnTimer = 0;
+    let debris = [];
+    let debrisSpawnTimer = 0;
+    let selectedDebris = null;
+    let webLayer;
+    let dropletsLayer;
+    let debrisImg1, debrisImg2;
+    let rainStartTime = null;
+    let dropletAlpha = 0; // 0–255
+    let windSway = 0;
+    let windActive = false;
+    let spiderBracing = false;
+    let envelopeImg;
+    let bouquetImg;
+    let debris1Count = 0;
+    let debris2Count = 0;
+    let bouquetAvailable = false;
+    let bouquet = null;
+    let web2Img;
+    let webFade = 0; // 0–1 fade amount
+    let webFading = false;
+    let fadeStartTime = null;
+    let envelopeBounds = { x: 0, y: 0, w: 0, h: 0 };
 
 
-
-   let cloudImg;
-   let cloudX = 0;
- let cloudY = 0;
+    let cloudImg;
+    let cloudX = 0;
+    let cloudY = 0;
     let cloudSpeed = 0.3;
     let cloudAlpha = 0;
     let cloudsActive = false;
@@ -310,6 +329,16 @@ if (c.micLevel > MIC_THRESHOLD) return 'frustrated';
 p.preload = function () {
     bgBehind = p.loadImage("bgbehind.png");
     bgImg = p.loadImage("background.png");
+    webLayer = p.loadImage("web1.png");
+    dropletsLayer = p.loadImage("droplets1.png");
+    cloudsImg = p.loadImage("clouds1.png");
+    debrisImg1 = p.loadImage("debris1.png");
+    debrisImg2 = p.loadImage("debris2.png");
+    envelopeImg = p.loadImage("envelope.png");
+    envelopeImg = p.loadImage("envelope.png");
+    bouquetImg = p.loadImage("bouquet.png");
+    web2Img = p.loadImage("web2.png");
+
     };
 
 
@@ -321,17 +350,39 @@ p.preload = function () {
 
     function isMobile() { return window.innerWidth <= 768; }
 
-    function canvasSize() {
-        if (isMobile()) return { w: window.innerWidth, h: window.innerHeight };
-        return {
-            w: SHOW_UI ? p.windowWidth - 360 : p.windowWidth - 40,
-            h: p.windowHeight - 40,
-        };
+function canvasSize() {
+    if (isMobile()) {
+        // Mobile stays full screen
+        return { w: window.innerWidth, h: window.innerHeight };
     }
+
+    // Desktop: scale 16:9 to fit available space
+    let maxW = p.windowWidth - 360; // space minus sidebar
+    let maxH = p.windowHeight - 40;
+
+    let targetRatio = 16 / 9;
+    let currentRatio = maxW / maxH;
+
+    let w, h;
+
+    if (currentRatio > targetRatio) {
+        // Window is too wide → limit by height
+        h = maxH;
+        w = h * targetRatio;
+    } else {
+        // Window is too tall → limit by width
+        w = maxW;
+        h = w / targetRatio;
+    }
+
+    return { w, h };
+}
+
 
 p.setup = function () {
     let sz = canvasSize();
     let cnv = p.createCanvas(sz.w, sz.h);
+    cnv.mousePressed(onCanvasClick);
     cnv.parent('canvas-container');
 
     cloudImg = p.loadImage("clouds1.png");   // ← FIXED
@@ -346,6 +397,8 @@ p.setup = function () {
         let startNode = WEB_NODES[creature.currentNode];
         creature.x = startNode.x * p.width;
         creature.y = startNode.y * p.height;
+
+        
 
         if (!SHOW_UI) document.querySelector('.sidebar').style.display = 'none';
 
@@ -363,6 +416,8 @@ p.setup = function () {
         ui.day = document.getElementById('ui-day');
         ui.afk = document.getElementById('ui-afk');
         ui.away = document.getElementById('ui-away');
+        ui.trustVal = document.getElementById('ui-trust-val');
+       ui.trustBar = document.getElementById('ui-trust-bar');
 
 
         window.addEventListener('focus', () => {
@@ -440,37 +495,137 @@ p.draw = function() {
 
     if (weatherData && weatherData.current) {
         code = weatherData.current.weather_code;
-        cloudy = (code !== 0 && code !== 1); 
-        
+        cloudy = (code !== 0 && code !== 1);
     }
 
     let raining = [51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code);
-    rainActive = raining;
+
+// Track how long it has been raining
+if (raining) {
+    if (rainStartTime === null) {
+        rainStartTime = Date.now(); // rain just started
+    }
+} else {
+    rainStartTime = null; // reset when rain stops
+}
+
+rainActive = raining;
+
+// Fade droplets in after 5 minutes of rain
+let rainMinutes = 0;
+if (rainStartTime !== null) {
+    rainMinutes = (Date.now() - rainStartTime) / 60000;
+}
+
+if (rainMinutes > 5) {
+    dropletAlpha = p.lerp(dropletAlpha, 255, 0.02); // fade in
+} else {
+    dropletAlpha = p.lerp(dropletAlpha, 0, 0.02);   // fade out
+}
 
 
+// Weather-based wind
+let windy = [95, 96, 99].includes(code); // thunderstorm codes
+
+// Mic-based wind (user too loud)
+let loud = creature.micLevel > MIC_THRESHOLD;
+
+// Combined wind trigger
+windActive = windy || loud;
+spiderBracing = windActive;
+
+// Update sway motion
+if (windActive) {
+    windSway += 0.04; // speed of sway
+} else {
+    windSway *= 0.9; // ease back to stillness
+}
+
+
+
+    // Background colour
     p.background(col[0], col[1], col[2]);
 
-    if (bgBehind) {
-        p.image(bgBehind, 0, 0, p.width, p.height);
-    }
+    // Behind layer
+    if (bgBehind) drawImageNoStretch(bgBehind);
 
-// --- Debris system ---
-// Spawn debris every ~15 seconds
+  // --- Web + droplets sway when windy or loud ---
+p.push();
+
+if (windActive) {
+    let swayX = Math.sin(windSway) * 6;  // horizontal sway
+    let swayY = Math.cos(windSway) * 3;  // vertical pulse
+    p.translate(swayX, swayY);
+}
+
+// Web layer
+// --- Web + droplets sway when windy or loud ---
+p.push();
+
+if (windActive) {
+    let swayX = Math.sin(windSway) * 6;
+    let swayY = Math.cos(windSway) * 3;
+    p.translate(swayX, swayY);
+}
+
+// Base web
+if (webLayer) drawImageNoStretch(webLayer);
+
+// Fade-in web2
+if (webFading) {
+    let elapsed = (Date.now() - fadeStartTime) / 20000; // 20 seconds
+    webFade = p.constrain(elapsed, 0, 1);
+
+    p.tint(255, webFade * 255);
+    drawImageNoStretch(web2Img);
+    p.noTint();
+
+    if (webFade >= 1) webFading = false;
+}
+
+// Droplets (still sway with web)
+if (dropletsLayer && dropletAlpha > 1) {
+    p.tint(255, dropletAlpha);
+    drawImageNoStretch(dropletsLayer);
+    p.noTint();
+}
+
+p.pop();
+
+// Droplets layer (fade-in handled by dropletAlpha)
+if (dropletsLayer && dropletAlpha > 1) {
+    p.tint(255, dropletAlpha);
+    drawImageNoStretch(dropletsLayer);
+    p.noTint();
+}
+
+p.pop();
+
+    //  Debris system 
+ //debris spawn rate based on away time
+ let spawnInterval = 200; // default (~3 seconds)
+
+ // If user is away, increase debris rate
+    if (!creature.isWatched) {
+    if (focusAwayMinutes > 5)  spawnInterval = 140;  // faster
+    if (focusAwayMinutes > 10) spawnInterval = 90;   // even faster
+    if (focusAwayMinutes > 20) spawnInterval = 50;   // chaotic
+}
+
 debrisSpawnTimer++;
-if (debrisSpawnTimer > 900) {
+if (debrisSpawnTimer > spawnInterval) {
     spawnDebris();
     debrisSpawnTimer = 0;
 }
 
-// Update + draw debris (falling or stuck)
-updateDebris();
+    updateDebris();
 
-
-
+    // --- Main background ---
     p.tint(255, 200);
-    p.image(bgImg, 0, 0, p.width, p.height);
+    if (bgImg) drawImageNoStretch(bgImg);
     p.noTint();
 
+    // --- Clouds ---
     if (cloudy) {
         cloudsActive = true;
         cloudAlpha = p.lerp(cloudAlpha, 255, 0.02);
@@ -490,25 +645,57 @@ updateDebris();
         p.noTint();
     }
 
-    // Rain effect
+    // --- Rain ---
     if (rainActive) {
         spawnRain();
         drawRain();
     }
 
-    // web + creature
-    if (USE_WEB_IMAGE && webImg) {
-        p.image(webImg, 0, 0, p.width, p.height);
-    } else {
-        drawProceduralWeb();
-    }
+    // --- REMOVE procedural web completely ---
+    // (Do NOT draw procedural web anymore)
 
+    // --- Creature ---
     updateMic(creature);
     updateCreature(creature);
     drawCreature(creature);
 
+    // --- Envelope at bottom center ---
+if (envelopeImg) {
+    let envW = envelopeImg.width * 0.06;
+    let envH = envelopeImg.height * 0.06;
+
+    let envX = (p.width - envW) / 1.85;
+    let envY = p.height - envH - 20;
+
+    p.image(envelopeImg, envX, envY, envW, envH);
+
+    // update global bounds
+    envelopeBounds.x = envX;
+    envelopeBounds.y = envY;
+    envelopeBounds.w = envW;
+    envelopeBounds.h = envH;
+}
+
+
+if (bouquetAvailable && bouquet) {
+    p.push();
+    p.translate(bouquet.x, bouquet.y);
+    p.image(bouquetImg, -bouquet.size/2, -bouquet.size/2, bouquet.size, bouquet.size);
+    p.pop();
+}
+
+
     if (p.frameCount % 6 === 0) updateSidebar(creature);
 };
+
+
+if (dropletsLayer && dropletAlpha > 1) {
+    p.push();
+    p.tint(255, dropletAlpha);
+    drawImageNoStretch(dropletsLayer);
+    p.noTint();
+    p.pop();
+}
 
 
     // ============================================================
@@ -581,6 +768,15 @@ if (c.freezeTimer > 0) {
     return; // stop all movement
 }
 
+// --- Celebration circles during web fade ---
+if (webFading) {
+    c.orbitAngle += 0.2;
+    c.x = p.width/2 + Math.cos(c.orbitAngle) * 80;
+    c.y = p.height/2 + Math.sin(c.orbitAngle) * 80;
+    return; // override normal movement
+}
+
+
 // If user was away for an hour, spider must curl up at hub
 if (c.awayTooLong) {
     c.returningHome = true;
@@ -590,6 +786,14 @@ if (c.isWatched && c.curled) {
     c.curled = false;
     c.awayTooLong = false;
 }
+
+// If too many debris pieces are stuck, spider retreats home
+let stuckCount = debris.filter(d => d.stuck).length;
+
+if (stuckCount >= 3) {
+    c.returningHome = true;
+}
+
 
 // ── 'Need behaviour' ──────────────────────────────────────────
 // ── Need behaviour with calm state ──────────────────────────
@@ -736,50 +940,111 @@ function drawProceduralWeb() {
     p.pop();
 }
 
+
+
 function spawnDebris() {
-    debris.push({
-        x: p.random(0, p.width),
-        y: -20,
-        size: p.random(6, 12),
-        speed: p.random(1, 2),
-        stuck: false,
-        stuckNode: null
-    });
+    let img = p.random([debrisImg1, debrisImg2]); 
+
+debris.push({
+    x: p.random(0, p.width),
+    y: -20,
+    img: img,
+    size: p.random(28, 48),
+    speed: p.random(2.2, 4.0),
+    rotation: p.random(-0.1, 0.1),
+    angle: 0,
+    stuck: false,
+    stuckNode: null,
+    dragging: false,
+    released: false
+});
+
 }
+
+
+function nodeHasDebris(nodeId) {
+    return debris.some(d => d.stuck && d.stuckNode === nodeId);
+}
+
+
 function updateDebris() {
     for (let d of debris) {
 
-        // If already stuck, just draw it
-        if (d.stuck) {
-            p.fill(255, 200);
-            p.noStroke();
-            p.circle(d.x, d.y, d.size);
+        // If being dragged
+        if (d.dragging) {
+            d.x = p.mouseX + d.offsetX;
+            d.y = p.mouseY + d.offsetY;
+
+           p.image(d.img, d.x - d.size/2, d.y - d.size/2, d.size, d.size);
             continue;
         }
 
-        // Falling
+        // If released, it just falls and never sticks again
+        if (d.released) {
+            d.y += d.speed * 1.2; // slightly faster fall
+p.push();
+d.angle += d.rotation; // spin while falling
+p.translate(d.x, d.y);
+p.rotate(d.angle);
+p.image(d.img, -d.size/2, -d.size/2, d.size, d.size);
+p.pop();
+            continue;
+        }
+
+        // If stuck, draw it
+     if (d.stuck) {
+    p.push();
+
+    // sway stuck debris with the web
+    if (windActive) {
+        let swayX = Math.sin(windSway) * 4;
+        let swayY = Math.cos(windSway) * 2;
+        p.translate(swayX, swayY);
+    }
+
+    p.image(d.img, d.x - d.size/2, d.y - d.size/2, d.size, d.size);
+    p.pop();
+    continue;
+}
+
+
+        // Normal falling
         d.y += d.speed;
 
-        // Check if it hits a web node
+        // Check for sticking ONLY if not released
         for (let n of WEB_NODES) {
             let nx = n.x * p.width;
             let ny = n.y * p.height;
-            if (p.dist(d.x, d.y, nx, ny) < 12) {
-                d.stuck = true;
-                d.stuckNode = n.id;
-                d.x = nx;
-                d.y = ny;
-                break;
-            }
+       if (p.dist(d.x, d.y, nx, ny) < 12) {
+  // prevents debris on the same node
+    if (!nodeHasDebris(n.id)) {
+        d.stuck = true;
+        d.stuckNode = n.id;
+        d.x = nx;
+        d.y = ny;
+    }
+
+    break;
+}
+
         }
 
         // Draw falling debris
-        p.fill(255, 200);
-        p.noStroke();
-        p.circle(d.x, d.y, d.size);
+     p.image(d.img, d.x - d.size/2, d.y - d.size/2, d.size, d.size);
     }
+
+    // Remove debris that falls off-screen
+    debris = debris.filter(d => d.y < p.height + 40);
 }
 
+function startWebFade() {
+    webFading = true;
+    fadeStartTime = Date.now();
+    webFade = 0;
+
+    // Spider celebration
+    creature.exciteTimer = 600; // 10 seconds of excitement
+}
 
     // ============================================================
     //  DRAWING
@@ -789,6 +1054,12 @@ function drawCreature(c) {
     p.push();
     p.translate(c.x, c.y);
     p.translate(0, p.sin(c.bob) * 4);
+    // Spider braces during strong wind or loud noise
+if (spiderBracing) {
+    p.translate(0, 6);      // lower body
+    p.scale(1.05, 0.92);    // squat shape
+}
+
 
     // Curl up if away too long
     if (c.curled) {
@@ -846,7 +1117,10 @@ function drawCreature(c) {
     function drawLegs(alpha, sway) {
         p.strokeWeight(1.5);
         p.noFill();
-        let ls = sway, rs = -sway;
+        let brace = spiderBracing ? 6 : 0; // widen stance
+        let ls = sway + brace;
+        let rs = -sway - brace;
+
         drawLeg(-8, -8,   -16, -20+ls, -30, -22+ls, -32, -16+ls, alpha);
         drawLeg(-10, -2,  -20, -8+ls,  -34, -4+ls,  -38,  3+ls,  alpha);
         drawLeg(-10,  4,  -18, 10+ls,  -30, 18+ls,  -34, 26+ls,  alpha);
@@ -969,6 +1243,98 @@ function drawCreature(c) {
         c.returningHome = true;   // after freeze, go home
     }
 }
+  
+// ============================================================
+//  MOUSE INTERACTION FOR DEBRIS
+// ============================================================
+
+p.mousePressed = function() {
+    for (let d of debris) {
+        if (p.dist(p.mouseX, p.mouseY, d.x, d.y) < d.size) {
+            selectedDebris = d;
+            d.dragging = true;
+            d.offsetX = d.x - p.mouseX;
+            d.offsetY = d.y - p.mouseY;
+            break;
+        }
+    }
+
+    if (bouquetAvailable && bouquet) {
+    if (p.dist(p.mouseX, p.mouseY, bouquet.x, bouquet.y) < bouquet.size/2) {
+        bouquet.dragging = true;
+        bouquet.offsetX = bouquet.x - p.mouseX;
+        bouquet.offsetY = bouquet.y - p.mouseY;
+        return;
+    }
+}
+
+};
+
+p.mouseDragged = function() {
+    // Drag bouquet
+    if (bouquet && bouquet.dragging) {
+        bouquet.x = p.mouseX + bouquet.offsetX;
+        bouquet.y = p.mouseY + bouquet.offsetY;
+    }
+
+    // Drag debris (already handled in updateDebris, but safe to include)
+    if (selectedDebris && selectedDebris.dragging) {
+        selectedDebris.x = p.mouseX + selectedDebris.offsetX;
+        selectedDebris.y = p.mouseY + selectedDebris.offsetY;
+    }
+};
+
+
+p.mouseReleased = function() {
+    if (selectedDebris) {
+
+        // Check if dropped on envelope
+        if (
+            selectedDebris.x > envelopeBounds.x &&
+            selectedDebris.x < envelopeBounds.x + envelopeBounds.w &&
+            selectedDebris.y > envelopeBounds.y &&
+            selectedDebris.y < envelopeBounds.y + envelopeBounds.h
+        ) {
+            // Count debris types
+            if (selectedDebris.img === debrisImg1) debris1Count++;
+            if (selectedDebris.img === debrisImg2) debris2Count++;
+
+            // Remove debris
+            debris = debris.filter(d => d !== selectedDebris);
+
+            // Check if bouquet should spawn
+            if (debris1Count >= 10 && debris2Count >= 10 && !bouquetAvailable) {
+                bouquetAvailable = true;
+                bouquet = {
+                    x: envelopeBounds.x + envelopeBounds.w/2,
+                    y: envelopeBounds.y - 40,
+                    size: 60,
+                    dragging: false
+                };
+            }
+
+            if (bouquet && bouquet.dragging) {
+    bouquet.dragging = false;
+
+    // Check if dropped on spider
+    let d = p.dist(bouquet.x, bouquet.y, creature.x, creature.y);
+    if (d < CREATURE_SIZE * 0.8 && creature.trustLevel >= 1) {
+        startWebFade();
+        bouquetAvailable = false;
+        bouquet = null;
+    }
+}
+
+        }
+
+        selectedDebris.dragging = false;
+        selectedDebris.released = true;
+        selectedDebris.stuck = false;
+
+        selectedDebris = null;
+    }
+
+};
 
 
 
@@ -1022,13 +1388,13 @@ function drawCreature(c) {
         if (ui.excited) ui.excited.textContent = c.exciteTimer > 0 ? 'yes!' : 'no';
         if (ui.watched) ui.watched.textContent = c.isWatched ? 'on' : 'away';
         if (ui.mic)     ui.mic.textContent     = micActive ? c.micLevel.toFixed(2) : '—';
+        if (ui.trustVal) ui.trustVal.textContent = Math.floor(c.trustLevel * 100);
+        if (ui.trustBar) ui.trustBar.style.width = (c.trustLevel * 100) + "%";
         if (ui.day) {
     const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
     ui.day.textContent = days[new Date().getDay()];
 }
-
-
-if (ui.weather) {
+        if (ui.weather) {
     if (weatherData && weatherData.current) {
         ui.weather.textContent = describeWeather(weatherData.current.weather_code);
     } 
@@ -1080,8 +1446,6 @@ if (ui.afk && c.lastVisit) {
     window._setDecay  = v => { DECAY_RATE = v; };
     window._setFeed   = v => { CLICK_FEED = v; };
 
-}, document.body);
-
 function drawImageNoStretch(img) {
     let imgRatio = img.width / img.height;
     let canvasRatio = p.width / p.height;
@@ -1104,4 +1468,8 @@ function drawImageNoStretch(img) {
 
     p.image(img, x, y, drawW, drawH);
 }
+
+}, document.body);
+
+
 
