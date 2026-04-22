@@ -33,35 +33,61 @@ new p5(function(p) {
     let MIC_THRESHOLD   = 0.15;
     let EXCITED_FRAMES  = 40;
     let BOUNCE_SCALE    = 1.0;
+
     let bgImg;
     let bgBehind;
     let focusLostAt = null;
     let focusAwayMinutes = 0;
     let raindrops = [];
     let rainActive = false;
+
+ //WEB + DEBRIS
     let debris = [];
     let debrisSpawnTimer = 0;
     let selectedDebris = null;
     let webLayer;
+    let web2Img;
+    let web3Img, web4Img;
+    let webFade = 0; // 0–1 fade amount
+    let webFading = false;
+    let currentWeb = 1;        // 1 = web1.png, 2 = web2.png, 3 = web3.png, 4 = web4.png
+    let targetWeb = null;    
     let dropletsLayer;
     let debrisImg1, debrisImg2;
+    let debris1Count = 0;
+    let debris2Count = 0;
+    let recentDebrisFalls = [];
+
+
+ //ENVELOPE
+    let envelopeImg;
+    let bouquetImg;
+    let bouquetAvailable = false;
+    let bouquet = null;
+    let fadeStartTime = null;
+    let envelopeBounds = { x: 0, y: 0, w: 0, h: 0 };
+    let envelopeBounce = 0;
+
     let rainStartTime = null;
     let dropletAlpha = 0; // 0–255
     let windSway = 0;
     let windActive = false;
-    let spiderBracing = false;
-    let envelopeImg;
-    let bouquetImg;
-    let debris1Count = 0;
-    let debris2Count = 0;
-    let bouquetAvailable = false;
-    let bouquet = null;
-    let web2Img;
-    let webFade = 0; // 0–1 fade amount
-    let webFading = false;
+    let spiderBracing = false;    
     let fadeStartTime = null;
-    let envelopeBounds = { x: 0, y: 0, w: 0, h: 0 };
+    let fadeDuration = 10000;  // 10 seconds
+    let frustrationTimer = 0;      
+    let frustrationPenalty = 0; // extra seconds added over time
+    let calmVisitTime = 0;         // how long user has been calm sorta
+    let connectionLevel = 0;    // higher connection means easier for spider to return to calm
+    let loudEvents = [];   // timestamps of loud events
+    let frustrationTimer = 0;
+    let calmVisitTime = 0;
+    let stars = [];
+    let relationshipLevel = 0;  
+    let fearLevel = 0;           
+    let recentDebrisFalls = [];  
 
+//later get rid of anyof these that dont use, clean up and fix clouds
 
     let cloudImg;
     let cloudX = 0;
@@ -116,21 +142,23 @@ async function fetchWeather() {
 function getBackgroundColor() {
     if (!weatherData) return COL_SUNNY_DAY;
 
-    const hour = new Date().getHours();
-    const code = weatherData.current.weather_code;
+    const hour = new Date().getHours() + new Date().getMinutes()/60;
 
-    const isDay = hour >= 6 && hour < 18;
-    const isSunset = hour >= 18 && hour < 20;
+    let target;
 
-    // Weather codes (Open-Meteo)
-    const sunnyCodes = [0, 1];
-    const cloudyCodes = [2, 3];
-    const rainCodes = [51, 61, 63, 80, 81];
+    if (hour < 6) target = COL_NIGHT;
+    else if (hour < 8) target = COL_SUNSET;
+    else if (hour < 17) target = COL_SUNNY_DAY;
+    else if (hour < 19) target = COL_SUNSET;
+    else target = COL_NIGHT;
 
-    if (!isDay) return COL_NIGHT;
-    if (isSunset) return COL_SUNSET;
+    let blend = (new Date().getMinutes() % 30) / 30;
 
-    if (sunnyCodes.includes(code)) return COL_SUNNY_DAY;
+    return [
+        p.lerp(col[0], target[0], blend),
+        p.lerp(col[1], target[1], blend),
+        p.lerp(col[2], target[2], blend)
+    ];
 
     if (cloudyCodes.includes(code)) {
         // Late afternoon greys get darker
@@ -235,8 +263,8 @@ function getBackgroundColor() {
         untrusted: { bounceAmt: 0.015, shakeAmt: 0.3, alphaTarget: 160 },
         worried:   { bounceAmt: 0.06, shakeAmt: 0.5, alphaTarget: 200 },
         frustrated: { bounceAmt: 0.07, shakeAmt: 1.0, alphaTarget: 200 },
-
-
+        comfort:   { bounceAmt: 0.01, shakeAmt: 0.0, alphaTarget: 255 },
+        fear:      { bounceAmt: 0.00, shakeAmt: 0.0, alphaTarget: 255 },
     };
 
     const STATE_DESCRIPTIONS = {
@@ -248,15 +276,21 @@ function getBackgroundColor() {
         worried: 'you’re gone — moving quickly, uneasy',
         untrusted: 'hasn’t seen you in a while — cautious, slow to relax',
         frustrated: 'too loud — irritated, waiting',
+        comfort: "quiet company — bonding, relaxed",
+        fear: "overwhelmed — curled up, scared",
 
     };
 
 function getState(c) {
+
+    if (fearLevel > 0.7) return "fear";
+    if (fearLevel > 0.4 && c.state !== "frustrated") return "distressed";
+
     // If user is NOT watching → worried
     if (!c.isWatched) return 'worried';
 
   // Loud noise → frustrated
-if (c.micLevel > MIC_THRESHOLD) return 'frustrated';
+    if (c.micLevel > MIC_THRESHOLD) return 'frustrated';
 
     // Calm only when trust is fully built
     if (c.trustLevel >= 1) return 'calm';
@@ -269,6 +303,10 @@ if (c.micLevel > MIC_THRESHOLD) return 'frustrated';
     if (c.need <= 30)      return 'happy';
     if (c.need <= 70)      return 'neutral';
     return 'distressed';
+
+    if (c.fearCurlTimer > 0) return "fear";
+    if (c.comfortMode) return "comfort";
+
 }
 
 
@@ -321,7 +359,6 @@ if (c.micLevel > MIC_THRESHOLD) return 'frustrated';
     let micData     = null;
     let ui          = {};
 
-
     // ============================================================
     //  PRELOAD  (only runs if USE_WEB_IMAGE is true)
     // ============================================================
@@ -338,11 +375,10 @@ p.preload = function () {
     envelopeImg = p.loadImage("envelope.png");
     bouquetImg = p.loadImage("bouquet.png");
     web2Img = p.loadImage("web2.png");
+    web3Img = p.loadImage("web3.png");
+    web4Img = p.loadImage("web4.png");
 
     };
-
-
-
 
     // ============================================================
     //  SETUP
@@ -398,7 +434,14 @@ p.setup = function () {
         creature.x = startNode.x * p.width;
         creature.y = startNode.y * p.height;
 
-        
+        for (let i = 0; i < 80; i++) {
+    stars.push({
+        x: p.random(p.width),
+        y: p.random(p.height * 0.6),
+        size: p.random(2, 5),
+        twinkle: p.random(0.5, 1.5)
+    });
+}
 
         if (!SHOW_UI) document.querySelector('.sidebar').style.display = 'none';
 
@@ -523,7 +566,6 @@ if (rainMinutes > 5) {
     dropletAlpha = p.lerp(dropletAlpha, 0, 0.02);   // fade out
 }
 
-
 // Weather-based wind
 let windy = [95, 96, 99].includes(code); // thunderstorm codes
 
@@ -541,25 +583,24 @@ if (windActive) {
     windSway *= 0.9; // ease back to stillness
 }
 
-
-
     // Background colour
     p.background(col[0], col[1], col[2]);
 
-    // Behind layer
-    if (bgBehind) drawImageNoStretch(bgBehind);
 
-  // --- Web + droplets sway when windy or loud ---
-p.push();
+    let hour = new Date().getHours();
+let clear = weatherData && [0,1].includes(weatherData.current.weather_code);
 
-if (windActive) {
-    let swayX = Math.sin(windSway) * 6;  // horizontal sway
-    let swayY = Math.cos(windSway) * 3;  // vertical pulse
-    p.translate(swayX, swayY);
+if (clear && (hour >= 20 || hour < 6)) {
+    for (let s of stars) {
+        let alpha = 200 + Math.sin(p.frameCount * 0.02 * s.twinkle) * 55;
+        p.stroke(255, alpha);
+        p.line(s.x - s.size, s.y, s.x + s.size, s.y);
+        p.line(s.x, s.y - s.size, s.x, s.y + s.size);
+    }
 }
 
-// Web layer
-// --- Web + droplets sway when windy or loud ---
+    
+// --- Web + droplets sway ---
 p.push();
 
 if (windActive) {
@@ -568,22 +609,38 @@ if (windActive) {
     p.translate(swayX, swayY);
 }
 
-// Base web
-if (webLayer) drawImageNoStretch(webLayer);
+// Draw the current base web
+let baseImg = (currentWeb === 1) ? webLayer :
+              (currentWeb === 2) ? web2Img :
+              (currentWeb === 3) ? web3Img :
+                                   web4Img;
 
-// Fade-in web2
-if (webFading) {
-    let elapsed = (Date.now() - fadeStartTime) / 20000; // 20 seconds
-    webFade = p.constrain(elapsed, 0, 1);
+drawImageNoStretch(baseImg);
+
+// Handle fading
+if (webFading && targetWeb !== null) {
+    let elapsed = Date.now() - fadeStartTime;
+    webFade = p.constrain(elapsed / fadeDuration, 0, 1);
+
+    // Choose target image
+    let targetImg = (targetWeb === 1) ? webLayer :
+                    (targetWeb === 2) ? web2Img :
+                    (targetWeb === 3) ? web3Img :
+                                        web4Img;
 
     p.tint(255, webFade * 255);
-    drawImageNoStretch(web2Img);
+    drawImageNoStretch(targetImg);
     p.noTint();
 
-    if (webFade >= 1) webFading = false;
+    // Finish fade
+    if (webFade >= 1) {
+        currentWeb = targetWeb;
+        targetWeb = null;
+        webFading = false;
+    }
 }
 
-// Droplets (still sway with web)
+// Droplets
 if (dropletsLayer && dropletAlpha > 1) {
     p.tint(255, dropletAlpha);
     drawImageNoStretch(dropletsLayer);
@@ -592,18 +649,44 @@ if (dropletsLayer && dropletAlpha > 1) {
 
 p.pop();
 
-// Droplets layer (fade-in handled by dropletAlpha)
-if (dropletsLayer && dropletAlpha > 1) {
-    p.tint(255, dropletAlpha);
-    drawImageNoStretch(dropletsLayer);
+
+    // Behind layer
+    if (bgBehind) drawImageNoStretch(bgBehind);
+
+   // --- Main background ---
+    p.tint(255, 255);
+    if (bgImg) drawImageNoStretch(bgImg);
     p.noTint();
+
+
+
+// Envelope bounce animation
+if (envelopeBounce > 0) {
+    envelopeBounce *= 0.85;  // ease out
 }
 
-p.pop();
+
+    // --- Envelope at bottom center ---
+if (envelopeImg) {
+    let envW = envelopeImg.width * 0.07;
+    let envH = envelopeImg.height * 0.07;
+
+    let envX = (p.width - envW) / 2;
+    let envY = p.height - envH - 15;
+    let bounceY = envelopeBounce * 10;
+
+p.image(envelopeImg, envX, envY - bounceY, envW, envH);
+
+
+    envelopeBounds.x = envX;
+    envelopeBounds.y = envY;
+    envelopeBounds.w = envW;
+    envelopeBounds.h = envH;
+}
 
     //  Debris system 
  //debris spawn rate based on away time
- let spawnInterval = 200; // default (~3 seconds)
+ let spawnInterval = 800; // default (~3 seconds)
 
  // If user is away, increase debris rate
     if (!creature.isWatched) {
@@ -617,14 +700,7 @@ if (debrisSpawnTimer > spawnInterval) {
     spawnDebris();
     debrisSpawnTimer = 0;
 }
-
     updateDebris();
-
-    // --- Main background ---
-    p.tint(255, 200);
-    if (bgImg) drawImageNoStretch(bgImg);
-    p.noTint();
-
     // --- Clouds ---
     if (cloudy) {
         cloudsActive = true;
@@ -657,24 +733,25 @@ if (debrisSpawnTimer > spawnInterval) {
     // --- Creature ---
     updateMic(creature);
     updateCreature(creature);
-    drawCreature(creature);
 
-    // --- Envelope at bottom center ---
-if (envelopeImg) {
-    let envW = envelopeImg.width * 0.06;
-    let envH = envelopeImg.height * 0.06;
+    // --- Calm company tracking ---
+if (creature.isWatched && creature.micLevel < 0.05 && frustrationTimer === 0) {
+    calmVisitTime++;
 
-    let envX = (p.width - envW) / 1.85;
-    let envY = p.height - envH - 20;
+    // Every 10 seconds of calm company
+    if (calmVisitTime % (60 * 10) === 0) {
+        connectionLevel = Math.min(1, connectionLevel + 0.05);
 
-    p.image(envelopeImg, envX, envY, envW, envH);
-
-    // update global bounds
-    envelopeBounds.x = envX;
-    envelopeBounds.y = envY;
-    envelopeBounds.w = envW;
-    envelopeBounds.h = envH;
+        // Reduce future frustration penalty
+        frustrationPenalty = Math.max(0, frustrationPenalty - 60 * 5);
+    }
 }
+if (!creature.isWatched) {
+    connectionLevel = Math.max(0, connectionLevel - 0.0002);
+}
+
+
+    drawCreature(creature);
 
 
 if (bouquetAvailable && bouquet) {
@@ -765,7 +842,16 @@ if (dropletsLayer && dropletAlpha > 1) {
 // --- FREEZE BEHAVIOUR ---
 if (c.freezeTimer > 0) {
     c.freezeTimer--;
+    c.state = "frustrated";
     return; // stop all movement
+}
+
+// Fear curl override
+if (c.fearCurlTimer > 0) {
+    c.fearCurlTimer--;
+    c.state = "fear";
+    c.curled = true;
+    return;
 }
 
 // --- Celebration circles during web fade ---
@@ -776,6 +862,13 @@ if (webFading) {
     return; // override normal movement
 }
 
+if (frustrationTimer > 0) {
+    frustrationTimer--;
+    frustrationTimer = Math.floor(frustrationTimer * 0.995);
+
+// Force frustrated state while timer is active
+    creature.state = "frustrated";
+}
 
 // If user was away for an hour, spider must curl up at hub
 if (c.awayTooLong) {
@@ -793,8 +886,7 @@ let stuckCount = debris.filter(d => d.stuck).length;
 if (stuckCount >= 3) {
     c.returningHome = true;
 }
-
-
+ 
 // ── 'Need behaviour' ──────────────────────────────────────────
 // ── Need behaviour with calm state ──────────────────────────
 // Calm fulfilment only when fully calm
@@ -814,12 +906,32 @@ if (c.isWatched && c.micLevel < 0.05) {
     c.trustLevel = Math.max(0, c.trustLevel - loss);
 }
 
+// --- Relationship meter ---
+// Calm, quiet, watched → relationship grows
+if (c.state === "calm" && c.micLevel < 0.05 && c.isWatched) {
+    relationshipLevel = Math.min(1, relationshipLevel + 0.0005);
+}
+
+// Loud, away, frustrated → relationship shrinks
+if (!c.isWatched || c.state === "frustrated" || c.micLevel > MIC_THRESHOLD) {
+    relationshipLevel = Math.max(0, relationshipLevel - 0.001);
+}
+
+// Comfort mode trigger
+if (c.state === "calm" && c.micLevel < 0.05 && c.isWatched) {
+    calmVisitTime++;
+    if (calmVisitTime > 60 * 20) c.comfortMode = true;
+} else {
+    calmVisitTime = 0;
+    c.comfortMode = false;
+}
+
+
 // Debris frustration: if any debris is stuck, spider becomes frustrated
 let debrisStuck = debris.some(d => d.stuck);
 if (debrisStuck) {
     c.state = 'frustrated';
 }
-
 
         // ── State & animation params ────────────────────────────
         c.state = getState(c);
@@ -835,7 +947,6 @@ if (c.state === 'worried' || c.state === 'frustrated') {
 } else {
     travelSpeed = BASE_SPEED;
 }
-
 
         c.breathe += 0.018;
         c.bob     += 0.012;
@@ -881,13 +992,22 @@ if (c.state === 'worried' || c.state === 'frustrated') {
     }
 
 
+// If spider loses trust → fade back to web1
+if (!webFading && currentWeb !== 1 && creature.trustLevel < 1) {
+    targetWeb = 1;
+    webFading = true;
+    fadeStartTime = Date.now();
+    webFade = 0;
+    fadeDuration = 5000; // 5 second fade-out
+}
+
     // ============================================================
     //  PROCEDURAL WEB (shown when USE_WEB_IMAGE is false)
     //
     //  Draws the actual graph edges so you can see the routes
     //  the spider will travel. Nodes are shown as small dots.
-    //  This makes it easy to tune node positions before you
-    //  switch to your own image.
+    //  This makes it easy to tune node positions before i
+    //  switch to my own images.
     // ============================================================
 
 function drawProceduralWeb() {
@@ -941,7 +1061,6 @@ function drawProceduralWeb() {
 }
 
 
-
 function spawnDebris() {
     let img = p.random([debrisImg1, debrisImg2]); 
 
@@ -982,12 +1101,13 @@ function updateDebris() {
         // If released, it just falls and never sticks again
         if (d.released) {
             d.y += d.speed * 1.2; // slightly faster fall
-p.push();
-d.angle += d.rotation; // spin while falling
-p.translate(d.x, d.y);
-p.rotate(d.angle);
-p.image(d.img, -d.size/2, -d.size/2, d.size, d.size);
-p.pop();
+   p.push();
+
+        d.angle += d.rotation; // spin while falling
+        p.translate(d.x, d.y);
+        p.rotate(d.angle);
+        p.image(d.img, -d.size/2, -d.size/2, d.size, d.size);
+   p.pop();
             continue;
         }
 
@@ -1007,9 +1127,21 @@ p.pop();
     continue;
 }
 
-
-        // Normal falling
+// DEBRIS FALLING, Normal falling
         d.y += d.speed;
+
+// Track falling debris for fear meter
+recentDebrisFalls.push(Date.now());
+recentDebrisFalls = recentDebrisFalls.filter(t => Date.now() - t < 3000);
+
+// Fear spikes if too many fall at once
+if (recentDebrisFalls.length >= 5) {
+    fearLevel = Math.min(1, fearLevel + 0.25);
+}
+
+// Fear decays slowly over time
+fearLevel = Math.max(0, fearLevel - 0.002);
+
 
         // Check for sticking ONLY if not released
         for (let n of WEB_NODES) {
@@ -1038,13 +1170,26 @@ p.pop();
 }
 
 function startWebFade() {
+
+    // Choose which web to fade to
+    if (creature.state === "calm") {
+        targetWeb = 4;   // web4.png
+    } 
+    else if (creature.state === "frustrated") {
+        targetWeb = 3;   // web3.png
+    } 
+    else {
+        targetWeb = 2;   // default web2.png
+    }
+
     webFading = true;
     fadeStartTime = Date.now();
     webFade = 0;
+    fadeDuration = 20000; // 20 seconds fade-in
 
-    // Spider celebration
-    creature.exciteTimer = 600; // 10 seconds of excitement
+    creature.exciteTimer = 600; // celebration circles
 }
+
 
     // ============================================================
     //  DRAWING
@@ -1060,6 +1205,10 @@ if (spiderBracing) {
     p.scale(1.05, 0.92);    // squat shape
 }
 
+if (c.comfortMode) {
+    p.translate(0, Math.sin(c.breathe * 0.5) * 3);
+    p.scale(1.05);
+}
 
     // Curl up if away too long
     if (c.curled) {
@@ -1072,7 +1221,7 @@ if (spiderBracing) {
             p.random(-1.5, 1.5)
         );
     }
-
+// Visual Emotions
     let s = STATES[c.state];
     let bScale = 1 + p.sin(c.breathe) * c.bounceAmt;
 
@@ -1082,6 +1231,18 @@ if (spiderBracing) {
             p.random(-s.shakeAmt * 0.4, s.shakeAmt * 0.4)
         );
     }
+ if (c.state === "frustrated") {
+    p.translate(p.random(-3, 3), p.random(-1, 1));
+}
+if (c.state === "worried") {
+    p.translate(p.random(-1, 1), p.random(-0.5, 0.5));
+}
+ 
+if (c.state === "fear") {
+    p.scale(0.6);
+    p.translate(0, 5);
+}
+
 
     // Face direction of travel
     let cur = WEB_NODES[c.currentNode];
@@ -1120,6 +1281,8 @@ if (spiderBracing) {
         let brace = spiderBracing ? 6 : 0; // widen stance
         let ls = sway + brace;
         let rs = -sway - brace;
+        if (creature.state === "frustrated") sway *= 0.3;
+        if (creature.state === "fear") sway = 0;
 
         drawLeg(-8, -8,   -16, -20+ls, -30, -22+ls, -32, -16+ls, alpha);
         drawLeg(-10, -2,  -20, -8+ls,  -34, -4+ls,  -38,  3+ls,  alpha);
@@ -1129,6 +1292,10 @@ if (spiderBracing) {
         drawLeg(10, -2,    20, -8+rs,   34, -4+rs,   38,  3+rs,  alpha);
         drawLeg(10,  4,    18, 10+rs,   30, 18+rs,   34, 26+rs,  alpha);
         drawLeg( 8, 10,    14, 20+rs,   20, 30+rs,   20, 38+rs,  alpha);
+
+        if (creature.state === "frustrated") {
+    sway *= 0.3;   // less sway
+}
     }
 
     function drawLeg(x0, y0, cx1, cy1, cx2, cy2, x3, y3, alpha) {
@@ -1173,14 +1340,29 @@ if (spiderBracing) {
 
     function drawEyes(c, alpha) {
         // Eyes always look forward when travelling on the web
+        let dx = p.mouseX - creature.x;
+        let dy = p.mouseY - creature.y;
+        let eyeSquash = 1.0;
+        if (c.state === "frustrated") eyeSquash = 0.6;
+        if (c.state === "fear") eyeSquash = 0.4;
+
         let pupilBig = c.state === 'excited';
+        let eyeSquash = (c.state === "frustrated") ? 0.6 : 1.0;
         let front = [[-7, -11], [-2.5, -13], [2.5, -13], [7, -11]];
+
+        let dx = p.mouseX - c.x;
+        let dy = p.mouseY - c.y;
+        let angle = Math.atan2(dy, dx);
+
+        let lookX = Math.cos(angle) * 1.2;
+        let lookY = Math.sin(angle) * 1.2;
+
         for (let [ex, ey] of front) {
             p.noStroke();
             p.fill(...WHITE, alpha);
-            p.ellipse(ex, ey, 4.8, 4.8);
+            p.ellipse(ex, ey, 4.8, 4.8 * eyeSquash);
             p.fill(...BLACK, alpha);
-            p.ellipse(ex, ey, pupilBig ? 2.8 : 1.5, pupilBig ? 2.8 : 1.5);
+            p.ellipse(ex + lookX, ey + lookY, pupilBig ? 2.8 : 1.5, pupilBig ? 2.8 : 1.5);
         }
         let back = [[-6, -7.5], [-2, -9], [2, -9], [6, -7.5]];
         for (let [ex, ey] of back) {
@@ -1188,7 +1370,7 @@ if (spiderBracing) {
             p.fill(...WHITE, alpha * 0.75);
             p.ellipse(ex, ey, 2.8, 2.8);
             p.fill(...BLACK, alpha);
-            p.ellipse(ex, ey, pupilBig ? 1.6 : 0.9, pupilBig ? 1.6 : 0.9);
+            p.ellipse(ex + lookX, ey + lookY, pupilBig ? 2.8 : 1.5, pupilBig ? 2.8 : 1.5);
         }
     }
 
@@ -1234,14 +1416,26 @@ if (spiderBracing) {
         return sum / (micData.length * 255);
     }
 
- function updateMic(c) {
-    if (!micActive) return;
-    c.micLevel = getMicLevel();
+function updateMic(c) {
+if (c.micLevel > MIC_THRESHOLD) {
 
-    if (c.micLevel > MIC_THRESHOLD) {
-        c.freezeTimer = 120;      // freeze for 2 seconds
-        c.returningHome = true;   // after freeze, go home
+    // Record this loud event
+    loudEvents.push(Date.now());
+
+    // Remove events older than 60 seconds
+    loudEvents = loudEvents.filter(t => Date.now() - t < 60000);
+
+    // If 3 loud events in 1 minute → frustrated for 1 minute
+    if (loudEvents.length >= 3) {
+        frustrationTimer = 60 * 60; // 1 minute in frames
+        loudEvents = []; // reset counter
     }
+
+    // Immediate reaction
+    c.state = "frustrated";
+    c.freezeTimer = 120;
+    c.returningHome = true;
+}
 }
   
 // ============================================================
@@ -1286,57 +1480,60 @@ p.mouseDragged = function() {
 
 
 p.mouseReleased = function() {
-    if (selectedDebris) {
 
-        // Check if dropped on envelope
-        if (
-            selectedDebris.x > envelopeBounds.x &&
-            selectedDebris.x < envelopeBounds.x + envelopeBounds.w &&
-            selectedDebris.y > envelopeBounds.y &&
-            selectedDebris.y < envelopeBounds.y + envelopeBounds.h
-        ) {
-            // Count debris types
-            if (selectedDebris.img === debrisImg1) debris1Count++;
-            if (selectedDebris.img === debrisImg2) debris2Count++;
+    // --- BOUQUET DROP ---
+    if (bouquet && bouquet.dragging) {
+        bouquet.dragging = false;
 
-            // Remove debris
-            debris = debris.filter(d => d !== selectedDebris);
-
-            // Check if bouquet should spawn
-            if (debris1Count >= 10 && debris2Count >= 10 && !bouquetAvailable) {
-                bouquetAvailable = true;
-                bouquet = {
-                    x: envelopeBounds.x + envelopeBounds.w/2,
-                    y: envelopeBounds.y - 40,
-                    size: 60,
-                    dragging: false
-                };
-            }
-
-            if (bouquet && bouquet.dragging) {
-    bouquet.dragging = false;
-
-    // Check if dropped on spider
-    let d = p.dist(bouquet.x, bouquet.y, creature.x, creature.y);
-    if (d < CREATURE_SIZE * 0.8 && creature.trustLevel >= 1) {
-        startWebFade();
-        bouquetAvailable = false;
-        bouquet = null;
-    }
-}
-
+        // Check if dropped on spider
+        let d = p.dist(bouquet.x, bouquet.y, creature.x, creature.y);
+      
+        if (d < CREATURE_SIZE * 0.8 && creature.trustLevel >= 1) {
+            startWebFade();
+            bouquetAvailable = false;
+            bouquet = null;
         }
-
-        selectedDebris.dragging = false;
-        selectedDebris.released = true;
-        selectedDebris.stuck = false;
-
-        selectedDebris = null;
     }
 
+    // --- DEBRIS DROP ---
+// --- DEBRIS DROP ---
+if (selectedDebris) {
+
+    if (
+        selectedDebris.x > envelopeBounds.x &&
+        selectedDebris.x < envelopeBounds.x + envelopeBounds.w &&
+        selectedDebris.y > envelopeBounds.y &&
+        selectedDebris.y < envelopeBounds.y + envelopeBounds.h
+    ) {
+        // Count debris
+        if (selectedDebris.img === debrisImg1) debris1Count++;
+        if (selectedDebris.img === debrisImg2) debris2Count++;
+
+        // Remove debris so it "disappears"
+        debris = debris.filter(d => d !== selectedDebris);
+
+        // Bounce animation
+        envelopeBounce = 1;
+
+        // Bouquet spawn after 10 total
+        let total = debris1Count + debris2Count;
+        if (total >= 10 && !bouquetAvailable) {
+            bouquetAvailable = true;
+            bouquet = {
+                x: envelopeBounds.x + envelopeBounds.w/2,
+                y: envelopeBounds.y - 40,
+                size: 90,
+                dragging: false
+            };
+        }
+    }
+
+    selectedDebris.dragging = false;
+    selectedDebris.released = true;
+    selectedDebris.stuck = false;
+    selectedDebris = null;
+}
 };
-
-
 
     // ============================================================
     //  PERSISTENCE
@@ -1370,15 +1567,26 @@ p.mouseReleased = function() {
              c.trustBuildRate = 0.001 / (1 + afkHours * 0.15);
 
              c.awayTooLong = afkHours >= 1;   // true if user was gone ≥ 1 hour
-
     }
-
 
     // ============================================================
     //  SIDEBAR SYNC
     // ============================================================
 
     function updateSidebar(c) {
+
+ui.state.style.color =
+    c.state === "fear" ? "#ff4444" :
+    c.state === "frustrated" ? "#ff8844" :
+    c.state === "distressed" ? "#ffaa00" :
+    c.state === "worried" ? "#ffcc00" :
+    c.state === "untrusted" ? "#cccc00" :
+    c.state === "calm" ? "#66dd88" :
+    c.state === "happy" ? "#88ff88" :
+    "#ffffff";
+
+
+
         if (ui.hour)    ui.hour.textContent    = c.hour % 12 || 12;
         if (ui.period)  ui.period.textContent  = c.hour < 12 ? 'am' : 'pm';
         if (ui.state)   ui.state.textContent   = c.state;
@@ -1403,6 +1611,22 @@ p.mouseReleased = function() {
     }
 
 }
+let totalDebris = debris1Count + debris2Count;
+let uiEnv = document.getElementById("ui-envelope-count");
+if (uiEnv) uiEnv.textContent = totalDebris;
+
+
+let bar = document.getElementById("ui-connection-bar");
+if (bar) bar.style.width = (connectionLevel * 100) + "%";
+
+// Relationship meter
+let relBar = document.getElementById("ui-relationship-bar");
+if (relBar) relBar.style.width = (relationshipLevel * 100) + "%";
+
+// Fear meter
+let fearBar = document.getElementById("ui-fear-bar");
+if (fearBar) fearBar.style.width = (fearLevel * 100) + "%";
+
 
 // Time away (minutes since focus lost)
 if (ui.away) {
