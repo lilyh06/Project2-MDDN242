@@ -12,13 +12,13 @@ new p5(function(p) {
     const SHOW_UI       = true;
     const USE_WEB_IMAGE = false;
 
-    let CREATURE_SIZE   = 120;
+    let CREATURE_SIZE   = 110;
     let DECAY_RATE      = 0.003;
     let AWAY_RATE       = 0.020;
     let AFK_PER_HOUR    = 5;
     let AFK_MAX_HOURS   = 168;
     let CLICK_FEED      = 20;
-    let MIC_THRESHOLD   = 0.15;
+    let MIC_THRESHOLD   = 0.35;
     let EXCITED_FRAMES  = 40;
     let BOUNCE_SCALE    = 1.0;
 
@@ -637,6 +637,21 @@ if (Date.now() > nextDebrisSpawn) {
 
     function updateCreature(c) {
 
+// Celebration circles after receiving bouquet
+if (c.celebrateTimer > 0) {
+    c.celebrateTimer--;
+
+    // Circle around center of screen
+    c.orbitAngle += 0.15;
+    c.x = p.width/2  + Math.cos(c.orbitAngle) * 90;
+    c.y = p.height/2 + Math.sin(c.orbitAngle) * 90;
+
+    // During celebration, spider is calm
+    c.state = "calm";
+    return;
+}
+
+
         // Freeze
         if (c.freezeTimer > 0) {
             c.freezeTimer--;
@@ -713,14 +728,15 @@ if (Date.now() > nextDebrisSpawn) {
         }
 
         // Fear / frustration from debris
-        if (stuckCount >= 6) {
-            fearLevel = Math.min(1, fearLevel + 0.02);
+       if (stuckCount >= 6) {
+    fearLevel = Math.min(1, fearLevel + 0.002); // 10× slower
         } else {
             fearLevel = Math.max(0, fearLevel - 0.01);
         }
-        if (stuckCount >= 2 && stuckCount < 6) {
-            c.state = "frustrated";
-        }
+       if (stuckCount >= 4 && stuckCount < 6) {
+    c.state = "frustrated";
+}
+
 
         // State + animation
         c.state     = getState(c);
@@ -916,7 +932,7 @@ if (Date.now() > nextDebrisSpawn) {
             p.translate(p.random(-3, 3), p.random(-1.5, 1.5));
         }
 
-        let s      = STATES[c.state];
+        let s = STATES[c.state];
         let bScale = 1 + p.sin(c.breathe) * c.bounceAmt;
 
         if (s.shakeAmt > 0) {
@@ -933,6 +949,17 @@ if (Date.now() > nextDebrisSpawn) {
         let tgt   = WEB_NODES[c.targetNode];
         let angle = Math.atan2((tgt.y - cur.y) * p.height, (tgt.x - cur.x) * p.width);
         p.rotate(angle + p.HALF_PI);
+
+        if (creature.celebrateTimer > 0) {
+    creature.celebrateTimer--;
+    creature.orbitAngle += 0.15;
+
+    creature.x = p.width/2 + Math.cos(creature.orbitAngle) * 80;
+    creature.y = p.height/2 + Math.sin(creature.orbitAngle) * 80;
+
+    return; // override normal movement hopefully
+}
+
 
         let sc = CREATURE_SIZE / 55.0 * bScale;
         p.scale(sc);
@@ -1077,10 +1104,43 @@ if (Date.now() > nextDebrisSpawn) {
     };
 
     p.mouseDragged = function() {
-        if (bouquet && bouquet.dragging) {
-            bouquet.x = p.mouseX + bouquet.offsetX;
-            bouquet.y = p.mouseY + bouquet.offsetY;
-        }
+      // Bouquet drop
+if (bouquet && bouquet.dragging) {
+    bouquet.dragging = false;
+
+    let d = p.dist(bouquet.x, bouquet.y, creature.x, creature.y);
+
+    // Accept bouquet if close enough AND trust is at least 0.3
+    if (d < CREATURE_SIZE * 0.9 && creature.trustLevel >= 0.3) {
+
+        // Calm the spider
+        fearLevel = Math.max(0, fearLevel - 0.5);
+        frustrationTimer = 0;
+        creature.freezeTimer = 0;
+
+        // Boost relationship + trust
+        relationshipLevel = Math.min(1, relationshipLevel + 0.25);
+        creature.trustLevel = Math.min(1, creature.trustLevel + 0.4);
+
+        // Start celebration mode
+        creature.celebrateTimer = 300;   // ~5 seconds of circles
+
+        // Trigger web fade to next web
+        startWebFade();
+
+        // Remove bouquet
+        bouquetAvailable = false;
+        bouquet = null;
+    }
+    creature.state = "comfort";
+creature.trustLevel = Math.min(1, creature.trustLevel + 0.4);
+relationshipLevel = Math.min(1, relationshipLevel + 0.5);
+fearLevel = Math.max(0, fearLevel - 0.5);
+frustrationTimer = 0;
+creature.orbitAngle = 0;
+
+}
+
         if (selectedDebris && selectedDebris.dragging) {
             selectedDebris.x = p.mouseX + selectedDebris.offsetX;
             selectedDebris.y = p.mouseY + selectedDebris.offsetY;
@@ -1088,16 +1148,31 @@ if (Date.now() > nextDebrisSpawn) {
     };
 
     p.mouseReleased = function() {
-        // Bouquet drop
-        if (bouquet && bouquet.dragging) {
-            bouquet.dragging = false;
-            let d = p.dist(bouquet.x, bouquet.y, creature.x, creature.y);
-            if (d < CREATURE_SIZE * 0.8 && creature.trustLevel >= 1) {
-                startWebFade();
-                bouquetAvailable = false;
-                bouquet          = null;
-            }
-        }
+// Bouquet drop
+if (bouquet && bouquet.dragging) {
+    bouquet.dragging = false;
+    let d = p.dist(bouquet.x, bouquet.y, creature.x, creature.y);
+
+    if (d < CREATURE_SIZE * 1.2 && creature.trustLevel >= 0.3) {
+
+        // Calm + relationship boost
+        creature.state = "comfort";
+        creature.trustLevel = Math.min(1, creature.trustLevel + 0.4);
+        relationshipLevel = Math.min(1, relationshipLevel + 0.5);
+        fearLevel = Math.max(0, fearLevel - 0.5);
+        frustrationTimer = 0;
+
+        // Celebration circles + web drawing
+        creature.orbitAngle = 0;
+        creature.celebrateTimer = 300; // 5 seconds
+        startWebFade();
+
+        // Remove bouquet
+        bouquetAvailable = false;
+        bouquet = null;
+    }
+}
+
 
         // Debris drop into envelope
         if (selectedDebris) {
