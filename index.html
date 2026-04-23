@@ -15,59 +15,88 @@
     <!-- ════════════════════ SIDEBAR ════════════════════ -->
     <div class="sidebar">
 
+        <!-- ── Hour + Day ── -->
+        <div class="hour-display">
+            <span class="hour-num" id="ui-hour">--</span>
+            <span class="hour-period" id="ui-period">--</span>
+            <span class="hour-day" id="ui-day">Monday</span>
+        </div>
 
-      <div class="hour-display">
-    <span class="hour-num" id="ui-hour">--</span>
-    <span class="hour-period" id="ui-period">--</span>
-    <span class="hour-day" id="ui-day">Monday</span>   
-</div>
+        <!-- ── Weather ── -->
+        <div class="weather-display">
+            <span class="weather-label">Wellington sky:</span>
+            <span id="ui-weather">loading…</span>
+        </div>
 
-<div class="weather-display">
-    <span class="weather-label">Weather:</span>
-    <span id="ui-weather">loading...</span>
-</div>
+        <!-- ── Envelope count ── -->
+        <div class="envelope-display">
+            Debris collected in envelope: <span id="ui-envelope-count">0</span>
+        </div>
 
-<div>Debris collected in Envelope: <span id="ui-envelope-count">0</span></div>
-
-
-<div>Connection: <div id="ui-connection-bar" class="bar"></div></div>
-
-<div class="sidebar-section">
-    <div class="label">Relationship</div>
-    <div class="bar-bg"><div id="ui-relationship-bar" class="bar"></div></div>
-</div>
-
-<div class="sidebar-section">
-    <div class="label">Fear</div>
-    <div class="bar-bg"><div id="ui-fear-bar" class="bar"></div></div>
-</div>
-
-
+        <!-- ── State card ── -->
         <div class="state-card">
             <div class="state-card-label">state</div>
             <div class="state-card-value" id="ui-state">neutral</div>
-            <div class="state-card-desc" id="ui-desc">need is rising — slightly transparent</div>
-            <div class="need-wrap">
-                <div class="need-track">
-                    <div class="need-fill" id="ui-need-bar" style="width:50%"></div>
-                </div>
-                <div class="need-labels">
-                    <span>need: <b id="ui-need-val">50</b></span>
-                </div>
+            <div class="state-card-desc" id="ui-desc">need is rising — avoiding backtrack</div>
+
+            <div class="icon-labels">
+                <span class="icon-label"><img src="heart.png" alt="relationship"> relationship: <b id="ui-relationship-val">0</b></span>
+                <span class="icon-label"><img src="warning.png" alt="fear"> fear: <b id="ui-fear-val">0</b></span>
+                <span class="icon-label"><img src="noise.png" alt="noise"> noise: <b id="ui-noise-val">0</b></span>
             </div>
-
-<div class="trust-wrap">
-    <div class="trust-track">
-        <div class="trust-fill" id="ui-trust-bar" style="width:0%"></div>
-    </div>
-    <div class="trust-labels">
-        <span>trust: <b id="ui-trust-val">0</b></span>
-    </div>
-</div>
-
-
         </div>
-        <!-- ── Stats ── -->
+
+        <!-- ── Need bar ── -->
+        <div class="trust-wrap">
+            <div class="trust-track">
+                <div class="trust-fill" id="ui-need-bar" style="width:50%"></div>
+            </div>
+            <div class="trust-labels">
+                <span>need: <b id="ui-need-val">50</b></span>
+            </div>
+        </div>
+
+        <!-- ── Noise bar ── -->
+        <div class="trust-wrap">
+            <div class="trust-track">
+                <div class="trust-fill" id="ui-noise-bar" style="width:0%"></div>
+            </div>
+            <div class="trust-labels">
+                <span>noise: <b id="ui-noise-display">0</b></span>
+            </div>
+        </div>
+
+        <!-- ── Trust bar ── -->
+        <div class="trust-wrap">
+            <div class="trust-track">
+                <div class="trust-fill" id="ui-trust-bar" style="width:0%"></div>
+            </div>
+            <div class="trust-labels">
+                <span>trust: <b id="ui-trust-val">0</b></span>
+            </div>
+        </div>
+
+        <!-- ── Relationship bar ── -->
+        <div class="trust-wrap">
+            <div class="trust-track">
+                <div class="trust-fill" id="ui-relationship-bar" style="width:0%"></div>
+            </div>
+            <div class="trust-labels">
+                <span>relationship: <b id="ui-relationship-display">0</b></span>
+            </div>
+        </div>
+
+        <!-- ── Fear bar ── -->
+        <div class="trust-wrap">
+            <div class="trust-track">
+                <div class="trust-fill" id="ui-fear-bar" style="width:0%"></div>
+            </div>
+            <div class="trust-labels">
+                <span>fear: <b id="ui-fear-display">0</b></span>
+            </div>
+        </div>
+
+        <!-- ── Stats pills ── -->
         <div class="stats-row">
             <div class="stat-pill">
                 <span class="s-label">visits</span>
@@ -87,7 +116,7 @@
             </div>
             <div class="stat-pill">
                 <span class="s-label">time away</span>
-             <span class="s-val" id="ui-away">0m</span>
+                <span class="s-val" id="ui-away">0m</span>
             </div>
         </div>
 
@@ -101,6 +130,10 @@
                 <li><span class="key">tab away</span> Trust fades the longer you're gone</li>
                 <li><span class="key">loud noise</span> Scares spider into corner (click first to allow mic)</li>
                 <li><span class="key">time away</span> AFK need builds up over hours</li>
+                <li><span class="key">Debris (2–5)</span> Spider becomes frustrated</li>
+                <li><span class="key">Debris (6+)</span> Spider becomes overwhelmed (fear)</li>
+                <li><span class="key">Noise &gt; 50%</span> Spider becomes scared + shakes</li>
+                <li><span class="key">Quiet company</span> Builds trust + relationship</li>
             </ul>
         </div>
 
@@ -127,7 +160,6 @@
                     <span class="val-display" id="dv-feed">20</span>
                 </div>
             </div>
-
         </div>
 
         <hr class="divider">
@@ -137,20 +169,17 @@
             <h3>Actions</h3>
             <button class="button danger" onclick="window._resetNeed && window._resetNeed()">Reset need to 0</button>
             <button class="button secondary" onclick="window._maxNeed && window._maxNeed()">Max need (→ distressed)</button>
-
-             <!-- ── Dark mode toggle── -->
-
-
-<button class="mode-toggle" onclick="toggleMode()">Dark mode</button>
-
+            <button class="button mode-toggle" onclick="toggleMode()">Dark mode</button>
         </div>
-    </div>
+
+    </div><!-- end .sidebar -->
 
     <!-- ════════════════════ CANVAS ════════════════════ -->
     <div class="canvas-area">
         <div id="canvas-container"></div>
     </div>
-</div>
+
+</div><!-- end .container -->
 
 <!-- Mobile drawer handle — only visible on small screens -->
 <button class="drawer-handle" id="drawer-handle" onclick="toggleDrawer()" aria-label="Toggle controls">
@@ -166,30 +195,23 @@
         const open    = sidebar.classList.toggle('drawer-open');
         label.textContent = open ? 'close' : 'controls';
     }
-</script>
-<script>
-function toggleMode() {
-    document.body.classList.toggle("dark-mode");
 
-    const btn = document.querySelector(".mode-toggle");
-    const dark = document.body.classList.contains("dark-mode");
-    btn.textContent = dark ? "Light mode" : "Dark mode";
-}
-</script>
-
-<script>
-// Auto‑match system theme on first load
-window.addEventListener("DOMContentLoaded", () => {
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const btn = document.querySelector(".mode-toggle");
-
-    if (prefersDark) {
-        document.body.classList.add("dark-mode");
-        if (btn) btn.textContent = "Light mode";
+    function toggleMode() {
+        document.body.classList.toggle('dark-mode');
+        const btn = document.querySelector('.mode-toggle');
+        btn.textContent = document.body.classList.contains('dark-mode') ? 'Light mode' : 'Dark mode';
     }
-});
-</script>
 
+    // Auto-match system theme on first load
+    window.addEventListener('DOMContentLoaded', () => {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (prefersDark) {
+            document.body.classList.add('dark-mode');
+            const btn = document.querySelector('.mode-toggle');
+            if (btn) btn.textContent = 'Light mode';
+        }
+    });
+</script>
 
 </body>
 </html>
